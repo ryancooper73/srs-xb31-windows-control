@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Xb31.Control/Xb31.Control.csproj" />
+    <Project Path="src/Xb31.Core/Xb31.Core.csproj" />
+    <Project Path="src/Xb31.PowerOff/Xb31.PowerOff.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Xb31.Control.Tests/Xb31.Control.Tests.csproj" />
+    <Project Path="tests/Xb31.Core.Tests/Xb31.Core.Tests.csproj" />
+  </Folder>
+</Solution>

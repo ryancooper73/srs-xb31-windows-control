@@ -1,0 +1,16 @@
+# .NET build output
+bin/
+obj/
+artifacts/
+TestResults/
+
+# Visual Studio and user-local state
+.vs/
+*.user
+*.suo
+
+# Runtime diagnostics
+*.log
+
+# Local Windows shortcut, specific to one machine
+*.lnk
