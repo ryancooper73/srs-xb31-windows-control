@@ -58,7 +58,7 @@ The safe verification mode does not require consent, sends no power-off command,
 & .\Shutdown-With-Xb31.ps1 -DryRun
 ```
 
-The tray application also handles ordinary Windows shutdown. During `WM_QUERYENDSESSION` it registers the visible reason `Turning off SRS-XB31...` and returns promptly. After Windows confirms shutdown through `WM_ENDSESSION`, the app sends one power-off transaction. A successful delivery releases immediately; unsuccessful delivery holds shutdown only until the 20-second absolute cap. Logoff, Restart Manager `CLOSEAPP`, critical shutdown, and canceled shutdown do not trigger the transaction.
+The tray application also handles ordinary Windows shutdown. During `WM_QUERYENDSESSION` it registers the visible reason `Turning off SRS-XB31...` and performs one bounded power-off transaction before allowing WPF shutdown to continue. Successful delivery releases immediately; unsuccessful delivery holds shutdown only until the 20-second absolute cap. `WM_ENDSESSION` is diagnostic only. Logoff, Restart Manager `CLOSEAPP`, and critical shutdown do not trigger the transaction.
 
 Shutdown actions are appended to `%LOCALAPPDATA%\XB31 Control\shutdown.log`.
 

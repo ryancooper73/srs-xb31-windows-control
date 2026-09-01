@@ -199,9 +199,9 @@ internal sealed class TrayApplicationController : IDisposable
     }
 
     /// <summary>
-    /// WPF surfaces its own hidden window's WM_QUERYENDSESSION here. Windows may deliver
-    /// that one before the main window's, so this is a second deduplicated entry point.
-    /// The event is never cancelled, so the session still ends.
+    /// WPF surfaces its hidden-window session-ending lifecycle here. It is a deduplicated
+    /// fallback when that notification arrives before the main window's query hook, and
+    /// is never cancelled, so the session still ends.
     /// </summary>
     private void ApplicationSessionEnding(object sender, SessionEndingCancelEventArgs e) =>
         _shutdownPowerOff!.HandleSessionEnding(

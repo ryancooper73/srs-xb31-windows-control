@@ -29,8 +29,8 @@ internal interface IShutdownBlockReason
 }
 
 /// <summary>
-/// Registers a shutdown-block reason during WM_QUERYENDSESSION, then sends one bounded
-/// XB31 power-off from WM_ENDSESSION while Windows keeps the process alive.
+/// Registers a shutdown-block reason and sends one bounded XB31 power-off while handling
+/// WM_QUERYENDSESSION, before WPF begins its own application shutdown.
 /// </summary>
 internal sealed class SystemShutdownPowerOff
 {
@@ -55,7 +55,6 @@ internal sealed class SystemShutdownPowerOff
     private readonly Action<string> _trace;
     private IntPtr _blockWindow;
     private bool _blockReasonCreated;
-    private int _shutdownArmed;
     private int _attemptStarted;
     private volatile bool _attemptInFlight;
 
@@ -143,10 +142,35 @@ internal sealed class SystemShutdownPowerOff
             return;
         }
 
-        if (Interlocked.CompareExchange(ref _shutdownArmed, 1, 0) != 0)
+        AttemptOnce(window);
+        _trace("returning TRUE");
+    }
+
+    /// <summary>
+    /// WPF raises this from its own hidden window's WM_QUERYENDSESSION. Whichever entry
+    /// point arrives first owns the single bounded transaction. The event is never
+    /// cancelled.
+    /// </summary>
+    internal void HandleSessionEnding(IntPtr window, bool isLogoff)
+    {
+        _trace($"Application.SessionEnding reason={(isLogoff ? "Logoff" : "Shutdown")}");
+        if (isLogoff)
         {
-            _trace("skipped: shutdown power off already armed");
-            _trace("returning TRUE");
+            _trace("skipped: not a system shutdown");
+        }
+        else
+        {
+            AttemptOnce(window);
+        }
+
+        _trace("session ending allowed to proceed");
+    }
+
+    private void AttemptOnce(IntPtr window)
+    {
+        if (Interlocked.Exchange(ref _attemptStarted, 1) != 0)
+        {
+            _trace("skipped: power off already attempted this session");
             return;
         }
 
@@ -161,24 +185,7 @@ internal sealed class SystemShutdownPowerOff
             _trace($"ShutdownBlockReasonCreate threw {exception.GetType().Name}");
         }
 
-        _trace("shutdown power off armed");
-        _trace("returning TRUE");
-    }
-
-    /// <summary>
-    /// WPF raises this from its own hidden window's WM_QUERYENDSESSION. It is diagnostic
-    /// only: the main window hook owns the block-reason and WM_ENDSESSION lifecycle. The
-    /// event is never cancelled.
-    /// </summary>
-    internal void HandleSessionEnding(IntPtr window, bool isLogoff)
-    {
-        _trace($"Application.SessionEnding reason={(isLogoff ? "Logoff" : "Shutdown")}");
-        if (isLogoff)
-        {
-            _trace("skipped: not a system shutdown");
-        }
-
-        _trace("session ending allowed to proceed");
+        AttemptPowerOff();
     }
 
     private void HandleEndSession(IntPtr wParam, IntPtr lParam)
@@ -193,39 +200,10 @@ internal sealed class SystemShutdownPowerOff
         if (!ending)
         {
             _trace("shutdown canceled");
-            ReleaseBlockReason();
-            Interlocked.Exchange(ref _attemptStarted, 0);
-            Interlocked.Exchange(ref _shutdownArmed, 0);
             return;
         }
 
-        if (!classification.IsEligibleForPowerOff)
-        {
-            _trace("skipped: not a system shutdown");
-            ReleaseBlockReason();
-            return;
-        }
-
-        if (classification.IsCritical)
-        {
-            _trace("skipped: critical shutdown");
-            ReleaseBlockReason();
-            return;
-        }
-
-        if (Volatile.Read(ref _shutdownArmed) == 0)
-        {
-            _trace("skipped: shutdown power off was not armed");
-            return;
-        }
-
-        if (Interlocked.Exchange(ref _attemptStarted, 1) != 0)
-        {
-            _trace("skipped: power off already attempted this session");
-            return;
-        }
-
-        AttemptPowerOff();
+        _trace("session end confirmed; query-time power off already completed");
     }
 
     private void AttemptPowerOff()

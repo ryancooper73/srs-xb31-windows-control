@@ -96,7 +96,7 @@ public sealed class SystemShutdownPowerOffTests
     }
 
     [TestMethod]
-    public void SystemShutdownQuery_RegistersTheBlockReasonWithoutStartingBluetooth()
+    public void SystemShutdownQuery_PowersOffAndReleasesTheBlockReasonBeforeReturning()
     {
         var client = new FakeClient(_ => Task.FromResult(Xb31Result.Success));
         var blockReason = new FakeBlockReason();
@@ -104,12 +104,14 @@ public sealed class SystemShutdownPowerOffTests
 
         handler.HandleMessage(Window, WmQueryEndSession, IntPtr.Zero, IntPtr.Zero);
 
-        Assert.AreEqual(0, client.PowerOffCalls);
+        Assert.AreEqual(1, client.PowerOffCalls);
         Assert.AreEqual(1, blockReason.CreateCalls);
-        Assert.AreEqual(0, blockReason.DestroyCalls);
+        Assert.AreEqual(1, blockReason.DestroyCalls);
         Assert.AreEqual("Turning off SRS-XB31...", blockReason.LastReason);
         Assert.AreEqual(Window, blockReason.LastWindow);
-        CollectionAssert.Contains(trace, "shutdown power off armed");
+        Assert.IsTrue(
+            trace.Any(entry => entry.StartsWith("power off completed status=Success", StringComparison.Ordinal)),
+            string.Join(" | ", trace));
         CollectionAssert.Contains(trace, "returning TRUE");
     }
 
@@ -128,11 +130,11 @@ public sealed class SystemShutdownPowerOffTests
         Assert.AreEqual(1, client.PowerOffCalls);
         Assert.AreEqual(1, blockReason.CreateCalls);
         Assert.AreEqual(1, blockReason.DestroyCalls);
-        CollectionAssert.Contains(trace, "skipped: shutdown power off already armed");
+        CollectionAssert.Contains(trace, "skipped: power off already attempted this session");
     }
 
     [TestMethod]
-    public void ConfirmedEndSession_SendsBluetoothAndReleasesTheBlockReasonOnSuccess()
+    public void EndSessionAfterQuery_DoesNotStartASecondBluetoothTransaction()
     {
         var client = new FakeClient(_ => Task.FromResult(Xb31Result.Success));
         var blockReason = new FakeBlockReason();
@@ -235,7 +237,7 @@ public sealed class SystemShutdownPowerOffTests
     }
 
     [TestMethod]
-    public void CanceledEndSession_ReleasesWithoutPowerOffAndAllowsANewShutdownSequence()
+    public void CanceledEndSession_DoesNotRepeatTheQueryTimePowerOff()
     {
         var client = new FakeClient(_ => Task.FromResult(Xb31Result.Success));
         var blockReason = new FakeBlockReason();
@@ -244,15 +246,15 @@ public sealed class SystemShutdownPowerOffTests
         handler.HandleMessage(Window, WmQueryEndSession, IntPtr.Zero, IntPtr.Zero);
         handler.HandleMessage(Window, WmEndSession, IntPtr.Zero, IntPtr.Zero);
 
-        Assert.AreEqual(0, client.PowerOffCalls);
+        Assert.AreEqual(1, client.PowerOffCalls);
         Assert.AreEqual(1, blockReason.DestroyCalls);
 
         handler.HandleMessage(Window, WmQueryEndSession, IntPtr.Zero, IntPtr.Zero);
         handler.HandleMessage(Window, WmEndSession, new IntPtr(1), IntPtr.Zero);
 
         Assert.AreEqual(1, client.PowerOffCalls);
-        Assert.AreEqual(2, blockReason.CreateCalls);
-        Assert.AreEqual(2, blockReason.DestroyCalls);
+        Assert.AreEqual(1, blockReason.CreateCalls);
+        Assert.AreEqual(1, blockReason.DestroyCalls);
     }
 
     [TestMethod]
@@ -412,7 +414,7 @@ public sealed class SystemShutdownPowerOffTests
     }
 
     [TestMethod]
-    public void SessionEndingForAShutdown_OnlyRecordsTheEventAndNeverCancels()
+    public void SessionEndingForAShutdown_PowersOffWhenTheWindowQueryDidNotRun()
     {
         var client = new FakeClient(_ => Task.FromResult(Xb31Result.Success));
         var blockReason = new FakeBlockReason();
@@ -420,8 +422,9 @@ public sealed class SystemShutdownPowerOffTests
 
         handler.HandleSessionEnding(Window, isLogoff: false);
 
-        Assert.AreEqual(0, client.PowerOffCalls);
-        Assert.AreEqual(0, blockReason.DestroyCalls);
+        Assert.AreEqual(1, client.PowerOffCalls);
+        Assert.AreEqual(1, blockReason.CreateCalls);
+        Assert.AreEqual(1, blockReason.DestroyCalls);
         CollectionAssert.Contains(trace, "Application.SessionEnding reason=Shutdown");
         CollectionAssert.Contains(trace, "session ending allowed to proceed");
     }
@@ -442,7 +445,7 @@ public sealed class SystemShutdownPowerOffTests
     }
 
     [TestMethod]
-    public void SessionEndingBeforeQuery_DoesNotPreventTheConfirmedEndSessionAttempt()
+    public void SessionEndingBeforeQuery_DoesNotPreventTheQueryTimeAttempt()
     {
         var client = new FakeClient(_ => Task.FromResult(Xb31Result.Success));
         var blockReason = new FakeBlockReason();
@@ -457,7 +460,7 @@ public sealed class SystemShutdownPowerOffTests
     }
 
     [TestMethod]
-    public void QueryThenSessionEnding_WaitsForConfirmedEndSessionBeforeStartingBluetooth()
+    public void QueryThenSessionEnding_DoesNotRepeatTheCompletedAttempt()
     {
         var client = new FakeClient(_ => Task.FromResult(Xb31Result.Success));
         var blockReason = new FakeBlockReason();
@@ -466,7 +469,7 @@ public sealed class SystemShutdownPowerOffTests
         handler.HandleMessage(Window, WmQueryEndSession, IntPtr.Zero, IntPtr.Zero);
         handler.HandleSessionEnding(Window, isLogoff: false);
 
-        Assert.AreEqual(0, client.PowerOffCalls);
+        Assert.AreEqual(1, client.PowerOffCalls);
         Assert.AreEqual(1, blockReason.CreateCalls);
 
         handler.HandleMessage(Window, WmEndSession, new IntPtr(1), IntPtr.Zero);
