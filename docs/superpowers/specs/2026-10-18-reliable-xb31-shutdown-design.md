@@ -189,6 +189,10 @@ Logging cannot delay its return.
 4. Make it the default only after the test period has no app-associated unexpected
    shutdown (`Kernel-Power` 41 / `EventLog` 6008) or Bluetooth driver failures.
 
+Until step 3 is explicitly enabled, automatic shutdown power-off is disabled. The old
+synchronous query-time implementation must not remain as a fallback, because retaining it
+would preserve the failure mode this design removes.
+
 ## Acceptance criteria
 
 - A query handler returns without waiting for Bluetooth work.
