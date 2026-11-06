@@ -56,17 +56,22 @@ exit 10
             Where-Object { $existingUiProcessIds -notcontains $_.Id }
     )
 
-    if ($exitCode -ne 0) {
-        throw "FAIL: helper-failure dry run exited with $exitCode. Output: $($output -join ' | ')"
+    if ($exitCode -ne 10) {
+        throw "FAIL: helper-failure dry run exited with $exitCode instead of the helper failure code 10. Output: $($output -join ' | ')"
     }
 
     foreach ($expectedText in @(
         'Shutdown: XB31 helper exit 10',
-        'Shutdown: Windows shutdown skipped (dry run)'
+        'Shutdown: XB31 power off failed; Windows remains on',
+        'Shutdown: notification suppressed (dry run)'
     )) {
         if ($output -notcontains $expectedText) {
             throw "FAIL: helper-failure dry run omitted '$expectedText'. Output: $($output -join ' | ')"
         }
+    }
+
+    if ($output -contains 'Shutdown: Windows shutdown skipped (dry run)') {
+        throw "FAIL: helper failure entered the Windows shutdown path. Output: $($output -join ' | ')"
     }
 
     if ($newUiProcesses.Count -ne 0) {
@@ -74,7 +79,7 @@ exit 10
         throw "FAIL: helper-failure dry run started the XB31 control UI process(es): $processIds"
     }
 
-    Write-Output 'PASS: shutdown remained headless and skipped Windows shutdown after helper exit 10'
+    Write-Output 'PASS: failed XB31 power off kept Windows on and returned the helper failure code'
 }
 finally {
     if ($null -ne $validatedTempDirectory -and (Test-Path -LiteralPath $validatedTempDirectory)) {

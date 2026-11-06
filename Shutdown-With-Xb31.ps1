@@ -63,6 +63,32 @@ function Write-ShutdownStatus {
     }
 }
 
+function Show-ErrorNotification {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message
+    )
+
+    if ($DryRun) {
+        Write-ShutdownStatus 'Shutdown: notification suppressed (dry run)'
+        return
+    }
+
+    try {
+        Add-Type -AssemblyName PresentationFramework
+        [System.Windows.MessageBox]::Show(
+            $Message,
+            'XB31 shutdown',
+            [System.Windows.MessageBoxButton]::OK,
+            [System.Windows.MessageBoxImage]::Error) | Out-Null
+        Write-ShutdownStatus 'Shutdown: failure notification displayed'
+    }
+    catch {
+        Write-ShutdownStatus (
+            "Shutdown: failure notification unavailable: $($_.Exception.Message)")
+    }
+}
+
 Write-ShutdownStatus 'Shutdown: started'
 
 $xb31Script = Join-Path $PSScriptRoot 'PowerOff-Xb31.ps1'
@@ -95,13 +121,15 @@ if ($xb31ExitCode -eq 0) {
     Start-Sleep -Seconds 2
 }
 
+if ($xb31ExitCode -ne 0) {
+    Write-ShutdownStatus 'Shutdown: XB31 power off failed; Windows remains on'
+    Show-ErrorNotification 'The XB31 did not power off. Windows will remain on.'
+    exit $xb31ExitCode
+}
+
 if ($DryRun) {
     Write-ShutdownStatus 'Shutdown: Windows shutdown skipped (dry run)'
     exit 0
-}
-
-if ($xb31ExitCode -ne 0) {
-    Write-ShutdownStatus 'Shutdown: continuing despite XB31 failure' -ErrorMessage
 }
 
 $shutdownPath = Join-Path $env:SystemRoot 'System32\shutdown.exe'
