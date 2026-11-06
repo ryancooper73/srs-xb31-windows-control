@@ -15,15 +15,10 @@ internal sealed class DisplayStateMonitor : IDisposable
     private const uint DeviceNotifyWindowHandle = 0;
 
     private readonly HwndSourceHook _hook;
-    private readonly SystemShutdownPowerOff? _shutdownPowerOff;
     private HwndSource? _source;
     private IntPtr _notificationHandle;
 
-    internal DisplayStateMonitor(SystemShutdownPowerOff? shutdownPowerOff = null)
-    {
-        _shutdownPowerOff = shutdownPowerOff;
-        _hook = WindowProc;
-    }
+    internal DisplayStateMonitor() => _hook = WindowProc;
 
     internal event Action<DisplayState>? StateChanged;
 
@@ -84,8 +79,6 @@ internal sealed class DisplayStateMonitor : IDisposable
         IntPtr lParam,
         ref bool handled)
     {
-        _shutdownPowerOff?.HandleMessage(hwnd, message, wParam, lParam);
-
         if (message != WmPowerBroadcast ||
             wParam.ToInt64() != PbtPowerSettingChange ||
             lParam == IntPtr.Zero)

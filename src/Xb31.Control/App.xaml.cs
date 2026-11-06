@@ -25,14 +25,7 @@ public partial class App : System.Windows.Application
         _singleInstance = singleInstance;
         try
         {
-            SystemShutdownPowerOff? shutdownTracker = null;
-            var client = StartupClientFactory.Create(
-                e.Args,
-                message => shutdownTracker?.TraceTransport(message));
-            var shutdownPowerOff = new SystemShutdownPowerOff(
-                client,
-                ShutdownTrace.CreateForCurrentUser().Write);
-            shutdownTracker = shutdownPowerOff;
+            var client = StartupClientFactory.Create(e.Args);
             var window = new MainWindow(client);
             MainWindow = window;
             var settings = UserSettings.CreateForCurrentUser(
@@ -43,9 +36,8 @@ public partial class App : System.Windows.Application
                 window,
                 window.ViewModel,
                 settings,
-                new DisplayStateMonitor(shutdownPowerOff),
-                startHidden,
-                shutdownPowerOff);
+                new DisplayStateMonitor(),
+                startHidden);
             _controller = controller;
             controller.Start();
             singleInstance.ListenForActivation(() =>

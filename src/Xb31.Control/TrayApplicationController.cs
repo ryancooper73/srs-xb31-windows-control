@@ -19,7 +19,6 @@ internal sealed class TrayApplicationController : IDisposable
     private readonly IXb31OperationHost _operations;
     private readonly UserSettings _settings;
     private readonly DisplayStateMonitor _displayMonitor;
-    private readonly SystemShutdownPowerOff? _shutdownPowerOff;
     private readonly bool _startHidden;
 
     private DisplayLightingSync? _displayLightingSync;
@@ -43,8 +42,7 @@ internal sealed class TrayApplicationController : IDisposable
         MainViewModel viewModel,
         UserSettings settings,
         DisplayStateMonitor displayMonitor,
-        bool startHidden = false,
-        SystemShutdownPowerOff? shutdownPowerOff = null)
+        bool startHidden = false)
     {
         _application = application ?? throw new ArgumentNullException(nameof(application));
         _window = window ?? throw new ArgumentNullException(nameof(window));
@@ -53,7 +51,6 @@ internal sealed class TrayApplicationController : IDisposable
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _displayMonitor = displayMonitor ?? throw new ArgumentNullException(nameof(displayMonitor));
         _startHidden = startHidden;
-        _shutdownPowerOff = shutdownPowerOff;
     }
 
     internal void Start()
@@ -74,10 +71,6 @@ internal sealed class TrayApplicationController : IDisposable
         _window.SyncLightingChanged += SyncLightingChanged;
         _window.StartWithWindowsChanged += StartWithWindowsChanged;
         _displayMonitor.StateChanged += DisplayStateChanged;
-        if (_shutdownPowerOff is not null)
-        {
-            _application.SessionEnding += ApplicationSessionEnding;
-        }
 
         CreateTrayIcon(syncEnabled);
         if (_startHidden)
@@ -105,10 +98,6 @@ internal sealed class TrayApplicationController : IDisposable
         _window.SyncLightingChanged -= SyncLightingChanged;
         _window.StartWithWindowsChanged -= StartWithWindowsChanged;
         _displayMonitor.StateChanged -= DisplayStateChanged;
-        if (_shutdownPowerOff is not null)
-        {
-            _application.SessionEnding -= ApplicationSessionEnding;
-        }
         _displayLightingSync?.Dispose();
         _displayMonitor.Dispose();
 
@@ -197,16 +186,6 @@ internal sealed class TrayApplicationController : IDisposable
         };
         _notifyIcon.DoubleClick += NotifyIconDoubleClicked;
     }
-
-    /// <summary>
-    /// WPF surfaces its hidden-window session-ending lifecycle here. It is a deduplicated
-    /// fallback when that notification arrives before the main window's query hook, and
-    /// is never cancelled, so the session still ends.
-    /// </summary>
-    private void ApplicationSessionEnding(object sender, SessionEndingCancelEventArgs e) =>
-        _shutdownPowerOff!.HandleSessionEnding(
-            new WindowInteropHelper(_window).Handle,
-            e.ReasonSessionEnding == ReasonSessionEnding.Logoff);
 
     private void SyncLightingChanged(bool enabled) => SetSyncLightingEnabled(enabled);
 
