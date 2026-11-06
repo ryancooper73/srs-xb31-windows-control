@@ -44,7 +44,7 @@ Build Release before using the wrapper:
 
 `-VerboseDiagnostics` may be added for transport troubleshooting.
 
-## Combined Windows shutdown
+## Manual Windows shutdown
 
 `Shutdown-With-Xb31.ps1` powers off the speaker and then invokes a forced Windows shutdown. Forced shutdown can discard unsaved work, so a real shutdown requires explicit consent:
 
@@ -58,20 +58,27 @@ The safe verification mode does not require consent, sends no power-off command,
 & .\Shutdown-With-Xb31.ps1 -DryRun
 ```
 
-The tray application also handles ordinary Windows shutdown. During `WM_QUERYENDSESSION` it registers the visible reason `Turning off SRS-XB31...` and performs one bounded power-off transaction before allowing WPF shutdown to continue. Successful delivery releases immediately; unsuccessful delivery holds shutdown only until the 20-second absolute cap. `WM_ENDSESSION` is diagnostic only. Logoff, Restart Manager `CLOSEAPP`, and critical shutdown do not trigger the transaction.
+If the speaker command fails, the script shows an error and leaves Windows running. The app does not send Bluetooth commands during normal Windows shutdown.
 
-Shutdown actions are appended to `%LOCALAPPDATA%\XB31 Control\shutdown.log`.
+To add the manual launcher to the current user's Desktop, run:
+
+```powershell
+& .\Install-Shutdown-With-Xb31Launcher.ps1
+```
+
+The generated **Shutdown XB31 and Windows.bat** runs the same fail-closed transaction.
 
 ## Repository layout
 
 ```text
 src/Xb31.Core/        Tandem protocol, RFCOMM transport, IXb31Client
-src/Xb31.Control/     WPF dashboard, tray, display sync, shutdown hook
+src/Xb31.Control/     WPF dashboard, tray, and display sync
 src/Xb31.PowerOff/    headless CLI helper, built as Xb31PowerOff.exe
 tests/Xb31.*.Tests/   MSTest unit tests
 tests/*.Tests.ps1     PowerShell integration and contract tests
 PowerOff-Xb31.ps1     operator entry point for speaker power-off
 Shutdown-With-Xb31.ps1   explicit combined speaker/Windows shutdown
+Install-Shutdown-With-Xb31Launcher.ps1   current-user Desktop launcher installer
 ```
 
 ## Protocol behavior
