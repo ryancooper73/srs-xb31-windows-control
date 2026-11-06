@@ -4,7 +4,9 @@
 param(
     [switch]$DryRun,
     [switch]$ForceShutdown,
-    [string]$LogPath
+    [string]$LogPath,
+    [string]$NotificationScriptPath,
+    [string]$ShutdownCommandPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -75,12 +77,21 @@ function Show-ErrorNotification {
     }
 
     try {
-        Add-Type -AssemblyName PresentationFramework
-        [System.Windows.MessageBox]::Show(
-            $Message,
-            'XB31 shutdown',
-            [System.Windows.MessageBoxButton]::OK,
-            [System.Windows.MessageBoxImage]::Error) | Out-Null
+        if ([string]::IsNullOrWhiteSpace($NotificationScriptPath)) {
+            Add-Type -AssemblyName PresentationFramework
+            [System.Windows.MessageBox]::Show(
+                $Message,
+                'XB31 shutdown',
+                [System.Windows.MessageBoxButton]::OK,
+                [System.Windows.MessageBoxImage]::Error) | Out-Null
+        }
+        else {
+            & $NotificationScriptPath -Message $Message
+            if ($LASTEXITCODE -ne 0) {
+                throw "Notification action exited with $LASTEXITCODE"
+            }
+        }
+
         Write-ShutdownStatus 'Shutdown: failure notification displayed'
     }
     catch {
@@ -132,7 +143,12 @@ if ($DryRun) {
     exit 0
 }
 
-$shutdownPath = Join-Path $env:SystemRoot 'System32\shutdown.exe'
+$shutdownPath = if ([string]::IsNullOrWhiteSpace($ShutdownCommandPath)) {
+    Join-Path $env:SystemRoot 'System32\shutdown.exe'
+}
+else {
+    $ShutdownCommandPath
+}
 try {
     Write-ShutdownStatus 'Shutdown: starting Windows shutdown'
     & $shutdownPath /s /f /t 0
