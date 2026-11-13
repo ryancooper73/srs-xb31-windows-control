@@ -118,15 +118,91 @@ public sealed class DisplayLightingSyncTests
     }
 
     [TestMethod]
-    public void OperationCompleted_AfterFailedAutomaticAttempt_DoesNotRetry()
+    public async Task AutomaticTransientFailure_RetriesTheCurrentDesiredTargetOnce()
     {
         var host = new FakeOperationHost();
-        using var sync = new DisplayLightingSync(host, enabled: true);
+        var delay = new ControlledDelay();
+        using var sync = new DisplayLightingSync(host, enabled: true, delayAsync: delay.WaitAsync);
         sync.Observe(DisplayState.On);
         sync.Observe(DisplayState.Off);
 
-        host.CompleteCurrent(commandSucceeded: false);
+        host.CompleteCurrent(new Xb31Result(Xb31Status.Unavailable));
+        await delay.WaitUntilRequestedAsync();
+        delay.Release();
+        await Task.Yield();
 
+        CollectionAssert.AreEqual(
+            new[] { LightingMode.LightOff, LightingMode.LightOff },
+            host.StartedModes);
+    }
+
+    [TestMethod]
+    public async Task AutomaticRetry_AChangedDisplayStateInvalidatesTheStaleRetry()
+    {
+        var host = new FakeOperationHost();
+        var delay = new ControlledDelay();
+        using var sync = new DisplayLightingSync(host, enabled: true, delayAsync: delay.WaitAsync);
+        sync.Observe(DisplayState.On);
+        sync.Observe(DisplayState.Off);
+        host.CompleteCurrent(new Xb31Result(Xb31Status.Timeout));
+        await delay.WaitUntilRequestedAsync();
+
+        sync.Observe(DisplayState.On);
+        delay.Release();
+        await Task.Yield();
+
+        CollectionAssert.AreEqual(
+            new[] { LightingMode.LightOff, LightingMode.Chill },
+            host.StartedModes);
+    }
+
+    [TestMethod]
+    public async Task AutomaticRetry_DisablingSyncBeforeDelayPreventsRetry()
+    {
+        var host = new FakeOperationHost();
+        var delay = new ControlledDelay();
+        using var sync = new DisplayLightingSync(host, enabled: true, delayAsync: delay.WaitAsync);
+        sync.Observe(DisplayState.On);
+        sync.Observe(DisplayState.Off);
+        host.CompleteCurrent(new Xb31Result(Xb31Status.ConnectionFailed));
+        await delay.WaitUntilRequestedAsync();
+
+        sync.Enabled = false;
+        delay.Release();
+        await Task.Yield();
+
+        CollectionAssert.AreEqual(new[] { LightingMode.LightOff }, host.StartedModes);
+    }
+
+    [TestMethod]
+    public async Task AutomaticRetry_DisposalBeforeDelayPreventsRetry()
+    {
+        var host = new FakeOperationHost();
+        var delay = new ControlledDelay();
+        var sync = new DisplayLightingSync(host, enabled: true, delayAsync: delay.WaitAsync);
+        sync.Observe(DisplayState.On);
+        sync.Observe(DisplayState.Off);
+        host.CompleteCurrent(new Xb31Result(Xb31Status.Unavailable));
+        await delay.WaitUntilRequestedAsync();
+
+        sync.Dispose();
+        delay.Release();
+        await Task.Yield();
+
+        CollectionAssert.AreEqual(new[] { LightingMode.LightOff }, host.StartedModes);
+    }
+
+    [TestMethod]
+    public void AutomaticRetry_NonTransientFailureDoesNotScheduleARetry()
+    {
+        var host = new FakeOperationHost();
+        var delay = new ControlledDelay();
+        using var sync = new DisplayLightingSync(host, enabled: true, delayAsync: delay.WaitAsync);
+        sync.Observe(DisplayState.On);
+        sync.Observe(DisplayState.Off);
+        host.CompleteCurrent(new Xb31Result(Xb31Status.WriteFailed));
+
+        Assert.IsFalse(delay.WasRequested);
         CollectionAssert.AreEqual(new[] { LightingMode.LightOff }, host.StartedModes);
     }
 
@@ -179,7 +255,7 @@ public sealed class DisplayLightingSyncTests
     private sealed class FakeOperationHost : IXb31OperationHost
     {
         private EventHandler? _operationCompleted;
-        private TaskCompletionSource<object?>? _currentOperation;
+        private TaskCompletionSource<Xb31Result>? _currentOperation;
 
         public event EventHandler? OperationCompleted
         {
@@ -195,17 +271,17 @@ public sealed class DisplayLightingSyncTests
 
         public List<LightingMode> StartedModes { get; } = [];
 
-        public bool TryStartLighting(LightingMode mode, out Task operation)
+        public bool TryStartLighting(LightingMode mode, out Task<Xb31Result> operation)
         {
             if (Busy)
             {
-                operation = Task.CompletedTask;
+                operation = Task.FromResult(Xb31Result.Success);
                 return false;
             }
 
             Busy = true;
             StartedModes.Add(mode);
-            _currentOperation = new TaskCompletionSource<object?>(
+            _currentOperation = new TaskCompletionSource<Xb31Result>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
             operation = _currentOperation.Task;
 
@@ -221,24 +297,44 @@ public sealed class DisplayLightingSyncTests
         {
             Assert.IsFalse(Busy);
             Busy = true;
-            _currentOperation = new TaskCompletionSource<object?>(
+            _currentOperation = new TaskCompletionSource<Xb31Result>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
-        public void CompleteCurrent(bool commandSucceeded = true)
+        public void CompleteCurrent(Xb31Result? result = null)
         {
-            ReleaseCurrentWithoutSignalingCompletion(commandSucceeded);
+            ReleaseCurrentWithoutSignalingCompletion(result);
             SignalCompletion();
         }
 
-        public void ReleaseCurrentWithoutSignalingCompletion(bool commandSucceeded = true)
+        public void ReleaseCurrentWithoutSignalingCompletion(Xb31Result? result = null)
         {
             Assert.IsTrue(Busy);
             Busy = false;
-            _currentOperation!.SetResult(commandSucceeded ? new object() : null);
+            _currentOperation!.SetResult(result ?? Xb31Result.Success);
             _currentOperation = null;
         }
 
         public void SignalCompletion() => _operationCompleted?.Invoke(this, EventArgs.Empty);
+    }
+
+    private sealed class ControlledDelay
+    {
+        private readonly TaskCompletionSource<object?> _requested = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<object?> _release = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool WasRequested => _requested.Task.IsCompleted;
+
+        public Task WaitAsync(TimeSpan _)
+        {
+            _requested.TrySetResult(null);
+            return _release.Task;
+        }
+
+        public Task WaitUntilRequestedAsync() => _requested.Task;
+
+        public void Release() => _release.TrySetResult(null);
     }
 }

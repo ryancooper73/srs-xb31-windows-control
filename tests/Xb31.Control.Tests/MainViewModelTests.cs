@@ -376,12 +376,13 @@ public sealed class MainViewModelTests
         int completed = 0;
         viewModel.OperationCompleted += (_, _) => completed++;
 
-        bool started = viewModel.TryStartLighting(LightingMode.LightOff, out Task operation);
+        bool started = viewModel.TryStartLighting(LightingMode.LightOff, out Task<Xb31Result> operation);
 
         Assert.IsTrue(started);
         Assert.IsFalse(operation.IsCompleted);
         completion.SetResult(Xb31Result.Success);
-        await operation;
+        Xb31Result result = await operation;
+        Assert.AreEqual(Xb31Status.Success, result.Status);
         Assert.AreEqual(1, completed);
     }
 
@@ -394,7 +395,7 @@ public sealed class MainViewModelTests
         var viewModel = new MainViewModel(client);
         Task initialization = viewModel.InitializeAsync();
 
-        Assert.IsFalse(viewModel.TryStartLighting(LightingMode.LightOff, out Task rejected));
+        Assert.IsFalse(viewModel.TryStartLighting(LightingMode.LightOff, out Task<Xb31Result> rejected));
         Assert.IsTrue(rejected.IsCompletedSuccessfully);
         Assert.AreEqual(0, client.LightingCalls);
 
