@@ -20,6 +20,7 @@ internal sealed class TrayApplicationController : IDisposable
     private readonly UserSettings _settings;
     private readonly DisplayStateMonitor _displayMonitor;
     private readonly bool _startHidden;
+    private readonly AppTrace _trace;
 
     private DisplayLightingSync? _displayLightingSync;
     private Stream? _trayIconStream;
@@ -42,7 +43,8 @@ internal sealed class TrayApplicationController : IDisposable
         MainViewModel viewModel,
         UserSettings settings,
         DisplayStateMonitor displayMonitor,
-        bool startHidden = false)
+        bool startHidden = false,
+        AppTrace? trace = null)
     {
         _application = application ?? throw new ArgumentNullException(nameof(application));
         _window = window ?? throw new ArgumentNullException(nameof(window));
@@ -51,6 +53,7 @@ internal sealed class TrayApplicationController : IDisposable
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _displayMonitor = displayMonitor ?? throw new ArgumentNullException(nameof(displayMonitor));
         _startHidden = startHidden;
+        _trace = trace ?? AppTrace.None;
     }
 
     internal void Start()
@@ -67,7 +70,7 @@ internal sealed class TrayApplicationController : IDisposable
         bool startWithWindows = _settings.StartWithWindows;
         _window.SetAutomationSettings(syncEnabled, startWithWindows);
 
-        _displayLightingSync = new DisplayLightingSync(_operations, syncEnabled);
+        _displayLightingSync = new DisplayLightingSync(_operations, syncEnabled, trace: _trace.Write);
         _window.SyncLightingChanged += SyncLightingChanged;
         _window.StartWithWindowsChanged += StartWithWindowsChanged;
         _displayMonitor.StateChanged += DisplayStateChanged;
@@ -194,6 +197,7 @@ internal sealed class TrayApplicationController : IDisposable
 
     private void SetSyncLightingEnabled(bool enabled)
     {
+        _trace.Write("DisplaySyncPreference", enabled ? "enabled" : "disabled");
         _settings.SyncLightingWithDisplay = enabled;
         _displayLightingSync!.Enabled = enabled;
         _syncMenuItem!.Checked = enabled;
@@ -203,6 +207,7 @@ internal sealed class TrayApplicationController : IDisposable
     private void DisplayStateChanged(DisplayState state)
     {
         Debug.WriteLine($"Display state -> {state.ToString().ToUpperInvariant()}");
+        _trace.Write("DisplayState", state.ToString().ToUpperInvariant());
         _displayLightingSync!.Observe(state);
     }
 

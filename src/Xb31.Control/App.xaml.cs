@@ -25,6 +25,10 @@ public partial class App : System.Windows.Application
         _singleInstance = singleInstance;
         try
         {
+            var trace = AppTrace.CreateForCurrentUser();
+            string executablePath = Environment.ProcessPath ?? "unavailable";
+            string version = System.Diagnostics.FileVersionInfo.GetVersionInfo(executablePath).ProductVersion ?? "unknown";
+            trace.Write("Startup", $"path={executablePath}; version={version}; hidden={startHidden}");
             var client = StartupClientFactory.Create(e.Args);
             var window = new MainWindow(client);
             MainWindow = window;
@@ -37,7 +41,8 @@ public partial class App : System.Windows.Application
                 window.ViewModel,
                 settings,
                 new DisplayStateMonitor(),
-                startHidden);
+                startHidden,
+                trace);
             _controller = controller;
             controller.Start();
             singleInstance.ListenForActivation(() =>

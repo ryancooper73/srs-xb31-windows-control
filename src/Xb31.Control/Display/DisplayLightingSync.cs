@@ -7,6 +7,7 @@ internal sealed class DisplayLightingSync : IDisposable
     private readonly object _gate = new();
     private readonly IXb31OperationHost _operations;
     private readonly Func<TimeSpan, Task> _delayAsync;
+    private readonly Action<string, string?> _trace;
     private bool _enabled;
     private bool _disposed;
     private DisplayState? _effectiveState;
@@ -17,10 +18,12 @@ internal sealed class DisplayLightingSync : IDisposable
     internal DisplayLightingSync(
         IXb31OperationHost operations,
         bool enabled,
-        Func<TimeSpan, Task>? delayAsync = null)
+        Func<TimeSpan, Task>? delayAsync = null,
+        Action<string, string?>? trace = null)
     {
         _operations = operations ?? throw new ArgumentNullException(nameof(operations));
         _delayAsync = delayAsync ?? Task.Delay;
+        _trace = trace ?? ((_, _) => { });
         _enabled = enabled;
         _operations.OperationCompleted += OnOperationCompleted;
     }
@@ -146,6 +149,7 @@ internal sealed class DisplayLightingSync : IDisposable
 
     private void TryStartLocked(LightingMode desired, int retryCount = 0)
     {
+        _trace("DisplaySyncStart", $"mode={desired}; attempt={retryCount + 1}");
         var automatic = new AutomaticOperation(desired, retryCount);
         _automaticInFlight = automatic;
         _pending = null;
@@ -158,6 +162,7 @@ internal sealed class DisplayLightingSync : IDisposable
 
         _automaticInFlight = null;
         _pending = desired;
+        _trace("DisplaySyncPending", $"mode={desired}");
     }
 
     private async Task CompleteAutomaticAsync(AutomaticOperation automatic, Task<Xb31Result> operation)
@@ -197,9 +202,14 @@ internal sealed class DisplayLightingSync : IDisposable
             IsTransient(completed.Status) &&
             DesiredFor(_effectiveState) == automatic.Mode)
         {
+            _trace("DisplaySyncRetryScheduled", $"mode={automatic.Mode}; status={completed.Status}");
             ScheduleRetryLocked(automatic.Mode, _stateGeneration);
             return;
         }
+
+        _trace(
+            "DisplaySyncResult",
+            $"mode={automatic.Mode}; status={result?.Status.ToString() ?? "exception"}; attempt={automatic.RetryCount + 1}");
 
         TryStartPendingLocked();
     }
@@ -221,9 +231,11 @@ internal sealed class DisplayLightingSync : IDisposable
                 DesiredFor(_effectiveState) != desired ||
                 _automaticInFlight is not null)
             {
+                _trace("DisplaySyncRetryCancelled", $"mode={desired}");
                 return;
             }
 
+            _trace("DisplaySyncRetryStarting", $"mode={desired}");
             TryStartLocked(desired, retryCount: 1);
         }
     }
