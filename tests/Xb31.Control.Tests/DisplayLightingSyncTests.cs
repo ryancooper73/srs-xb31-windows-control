@@ -327,7 +327,7 @@ public sealed class DisplayLightingSyncTests
 
         public bool WasRequested => _requested.Task.IsCompleted;
 
-        public Task WaitAsync(TimeSpan _) 
+        public Task WaitAsync(TimeSpan _)
         {
             _requested.TrySetResult(null);
             return _release.Task;
