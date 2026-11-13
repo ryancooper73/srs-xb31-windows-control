@@ -68,6 +68,16 @@ To add the manual launcher to the current user's Desktop, run:
 
 The generated **Shutdown XB31 and Windows.bat** runs the same fail-closed transaction.
 
+## Install the control app
+
+Publish the desktop app into the current user's local application data and repair its desktop and Windows Startup registrations:
+
+```powershell
+& .\Install-Xb31Control.ps1
+```
+
+The installer creates a fresh release under `%LOCALAPPDATA%\XB31 Control\releases` and points **XB31 Control.lnk** and the user Startup entry at that release. It does not overwrite a running release; quit the app before opening the new shortcut. Display-sync activity is recorded best-effort in `%LOCALAPPDATA%\XB31 Control\activity.log`.
+
 ## Repository layout
 
 ```text
@@ -79,6 +89,7 @@ tests/*.Tests.ps1     PowerShell integration and contract tests
 PowerOff-Xb31.ps1     operator entry point for speaker power-off
 Shutdown-With-Xb31.ps1   explicit combined speaker/Windows shutdown
 Install-Shutdown-With-Xb31Launcher.ps1   current-user Desktop launcher installer
+Install-Xb31Control.ps1    current-user control-app publisher and launch registration
 ```
 
 ## Protocol behavior

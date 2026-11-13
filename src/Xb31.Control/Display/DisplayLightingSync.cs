@@ -138,6 +138,15 @@ internal sealed class DisplayLightingSync : IDisposable
                 return;
             }
 
+            if (_automaticInFlight is { Operation.IsCompleted: true } automatic)
+            {
+                Xb31Result? result = automatic.Operation.IsCompletedSuccessfully
+                    ? automatic.Operation.Result
+                    : null;
+                CompleteAutomaticLocked(automatic, result);
+                return;
+            }
+
             if (_automaticInFlight is not null)
             {
                 return;
