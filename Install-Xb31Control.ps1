@@ -76,13 +76,12 @@ try {
     New-ItemProperty -LiteralPath $RunRegistryPath -Name $RunValueName -Value $startupCommand -PropertyType String -Force | Out-Null
 
     $obsoleteShortcutPath = Join-Path $DesktopPath 'Shutdown-With-Xb31.ps1 - Raccourci.lnk'
-    $obsoleteScriptPath = Join-Path $RepositoryRoot 'Shutdown-With-Xb31.ps1'
-    if ((Test-Path -LiteralPath $obsoleteShortcutPath -PathType Leaf) -and
-        (Test-Path -LiteralPath $obsoleteScriptPath -PathType Leaf)) {
+    if (Test-Path -LiteralPath $obsoleteShortcutPath -PathType Leaf) {
         $obsoleteShortcut = $shell.CreateShortcut($obsoleteShortcutPath)
         $targetPath = $obsoleteShortcut.TargetPath
         if (-not [string]::IsNullOrWhiteSpace($targetPath) -and
-            ((Resolve-Path -LiteralPath $targetPath).Path -ieq (Resolve-Path -LiteralPath $obsoleteScriptPath).Path) -and
+            (Test-Path -LiteralPath $targetPath -PathType Leaf) -and
+            ((Split-Path -Leaf $targetPath) -ieq 'Shutdown-With-Xb31.ps1') -and
             [string]::IsNullOrWhiteSpace($obsoleteShortcut.Arguments)) {
             Remove-Item -LiteralPath $obsoleteShortcutPath -Force
         }
