@@ -228,14 +228,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IXb31OperationHost
         }
     }
 
-    public Task SetLightingAsync(LightingMode mode) =>
-        TryStartLighting(mode, out Task operation) ? operation : Task.CompletedTask;
+    public async Task SetLightingAsync(LightingMode mode)
+    {
+        if (TryStartLighting(mode, out Task<Xb31Result> operation))
+        {
+            await operation;
+        }
+    }
 
-    public bool TryStartLighting(LightingMode mode, out Task operation)
+    public bool TryStartLighting(LightingMode mode, out Task<Xb31Result> operation)
     {
         if (!TryBeginOperation())
         {
-            operation = Task.CompletedTask;
+            operation = Task.FromResult(Xb31Result.Success);
             return false;
         }
 
@@ -243,11 +248,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IXb31OperationHost
         return true;
     }
 
-    private async Task CompleteLightingAsync(LightingMode mode)
+    private async Task<Xb31Result> CompleteLightingAsync(LightingMode mode)
     {
+        Xb31Result result;
         try
         {
-            Xb31Result result = await _client.SetLightingAsync(mode);
+            result = await _client.SetLightingAsync(mode);
             WriteDiagnostic(result);
 
             if (result.IsSuccess)
@@ -271,6 +277,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IXb31OperationHost
         {
             EndOperation();
         }
+
+        return result;
     }
 
     public async Task PowerOffAsync()

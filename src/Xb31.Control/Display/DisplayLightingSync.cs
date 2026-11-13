@@ -6,15 +6,21 @@ internal sealed class DisplayLightingSync : IDisposable
 {
     private readonly object _gate = new();
     private readonly IXb31OperationHost _operations;
+    private readonly Func<TimeSpan, Task> _delayAsync;
     private bool _enabled;
     private bool _disposed;
     private DisplayState? _effectiveState;
     private AutomaticOperation? _automaticInFlight;
     private LightingMode? _pending;
+    private int _stateGeneration;
 
-    internal DisplayLightingSync(IXb31OperationHost operations, bool enabled)
+    internal DisplayLightingSync(
+        IXb31OperationHost operations,
+        bool enabled,
+        Func<TimeSpan, Task>? delayAsync = null)
     {
         _operations = operations ?? throw new ArgumentNullException(nameof(operations));
+        _delayAsync = delayAsync ?? Task.Delay;
         _enabled = enabled;
         _operations.OperationCompleted += OnOperationCompleted;
     }
@@ -36,6 +42,7 @@ internal sealed class DisplayLightingSync : IDisposable
                 if (!value)
                 {
                     _pending = null;
+                    _stateGeneration++;
                 }
             }
         }
@@ -73,6 +80,7 @@ internal sealed class DisplayLightingSync : IDisposable
             }
 
             _effectiveState = state;
+            _stateGeneration++;
             if (!_enabled)
             {
                 return;
@@ -112,6 +120,7 @@ internal sealed class DisplayLightingSync : IDisposable
 
             _disposed = true;
             _pending = null;
+            _stateGeneration++;
         }
 
         _operations.OperationCompleted -= OnOperationCompleted;
@@ -128,11 +137,6 @@ internal sealed class DisplayLightingSync : IDisposable
 
             if (_automaticInFlight is not null)
             {
-                if (_automaticInFlight.Operation?.IsCompleted == true)
-                {
-                    CompleteAutomaticLocked(_automaticInFlight);
-                }
-
                 return;
             }
 
@@ -140,12 +144,12 @@ internal sealed class DisplayLightingSync : IDisposable
         }
     }
 
-    private void TryStartLocked(LightingMode desired)
+    private void TryStartLocked(LightingMode desired, int retryCount = 0)
     {
-        var automatic = new AutomaticOperation(desired);
+        var automatic = new AutomaticOperation(desired, retryCount);
         _automaticInFlight = automatic;
         _pending = null;
-        if (_operations.TryStartLighting(desired, out Task operation))
+        if (_operations.TryStartLighting(desired, out Task<Xb31Result> operation))
         {
             automatic.Operation = operation;
             _ = CompleteAutomaticAsync(automatic, operation);
@@ -156,24 +160,25 @@ internal sealed class DisplayLightingSync : IDisposable
         _pending = desired;
     }
 
-    private async Task CompleteAutomaticAsync(AutomaticOperation automatic, Task operation)
+    private async Task CompleteAutomaticAsync(AutomaticOperation automatic, Task<Xb31Result> operation)
     {
+        Xb31Result? result = null;
         try
         {
-            await operation.ConfigureAwait(false);
+            result = await operation.ConfigureAwait(false);
         }
         catch
         {
-            // The view model reports operation failures; synchronization never retries them.
+            // The view model reports unexpected operation exceptions.
         }
 
         lock (_gate)
         {
-            CompleteAutomaticLocked(automatic);
+            CompleteAutomaticLocked(automatic, result);
         }
     }
 
-    private void CompleteAutomaticLocked(AutomaticOperation automatic)
+    private void CompleteAutomaticLocked(AutomaticOperation automatic, Xb31Result? result)
     {
         if (_disposed || !ReferenceEquals(_automaticInFlight, automatic))
         {
@@ -181,7 +186,46 @@ internal sealed class DisplayLightingSync : IDisposable
         }
 
         _automaticInFlight = null;
+        if (_pending is not null)
+        {
+            TryStartPendingLocked();
+            return;
+        }
+
+        if (result is { } completed &&
+            automatic.RetryCount == 0 &&
+            IsTransient(completed.Status) &&
+            DesiredFor(_effectiveState) == automatic.Mode)
+        {
+            ScheduleRetryLocked(automatic.Mode, _stateGeneration);
+            return;
+        }
+
         TryStartPendingLocked();
+    }
+
+    private void ScheduleRetryLocked(LightingMode desired, int generation)
+    {
+        _ = RetryAutomaticAsync(desired, generation);
+    }
+
+    private async Task RetryAutomaticAsync(LightingMode desired, int generation)
+    {
+        await _delayAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+
+        lock (_gate)
+        {
+            if (_disposed ||
+                !_enabled ||
+                generation != _stateGeneration ||
+                DesiredFor(_effectiveState) != desired ||
+                _automaticInFlight is not null)
+            {
+                return;
+            }
+
+            TryStartLocked(desired, retryCount: 1);
+        }
     }
 
     private void TryStartPendingLocked()
@@ -196,8 +240,18 @@ internal sealed class DisplayLightingSync : IDisposable
         TryStartLocked(pending);
     }
 
-    private sealed record AutomaticOperation(LightingMode Mode)
+    private static LightingMode? DesiredFor(DisplayState? state) => state switch
     {
-        internal Task? Operation { get; set; }
+        DisplayState.Off => LightingMode.LightOff,
+        DisplayState.On => LightingMode.Chill,
+        _ => null
+    };
+
+    private static bool IsTransient(Xb31Status status) => status is
+        Xb31Status.Unavailable or Xb31Status.ConnectionFailed or Xb31Status.Timeout;
+
+    private sealed record AutomaticOperation(LightingMode Mode, int RetryCount)
+    {
+        internal Task<Xb31Result>? Operation { get; set; }
     }
 }

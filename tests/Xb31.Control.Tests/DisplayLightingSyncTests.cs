@@ -118,16 +118,20 @@ public sealed class DisplayLightingSyncTests
     }
 
     [TestMethod]
-    public void OperationCompleted_AfterFailedAutomaticAttempt_DoesNotRetry()
+    public async Task AutomaticTransientFailure_RetriesTheCurrentDesiredTargetOnce()
     {
         var host = new FakeOperationHost();
         using var sync = new DisplayLightingSync(host, enabled: true);
         sync.Observe(DisplayState.On);
         sync.Observe(DisplayState.Off);
 
-        host.CompleteCurrent(commandSucceeded: false);
+        host.CompleteCurrent(new Xb31Result(Xb31Status.Unavailable));
 
-        CollectionAssert.AreEqual(new[] { LightingMode.LightOff }, host.StartedModes);
+        await Task.Delay(TimeSpan.FromMilliseconds(3500));
+
+        CollectionAssert.AreEqual(
+            new[] { LightingMode.LightOff, LightingMode.LightOff },
+            host.StartedModes);
     }
 
     [TestMethod]
@@ -179,7 +183,7 @@ public sealed class DisplayLightingSyncTests
     private sealed class FakeOperationHost : IXb31OperationHost
     {
         private EventHandler? _operationCompleted;
-        private TaskCompletionSource<object?>? _currentOperation;
+        private TaskCompletionSource<Xb31Result>? _currentOperation;
 
         public event EventHandler? OperationCompleted
         {
@@ -195,17 +199,17 @@ public sealed class DisplayLightingSyncTests
 
         public List<LightingMode> StartedModes { get; } = [];
 
-        public bool TryStartLighting(LightingMode mode, out Task operation)
+        public bool TryStartLighting(LightingMode mode, out Task<Xb31Result> operation)
         {
             if (Busy)
             {
-                operation = Task.CompletedTask;
+                operation = Task.FromResult(Xb31Result.Success);
                 return false;
             }
 
             Busy = true;
             StartedModes.Add(mode);
-            _currentOperation = new TaskCompletionSource<object?>(
+            _currentOperation = new TaskCompletionSource<Xb31Result>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
             operation = _currentOperation.Task;
 
@@ -221,21 +225,21 @@ public sealed class DisplayLightingSyncTests
         {
             Assert.IsFalse(Busy);
             Busy = true;
-            _currentOperation = new TaskCompletionSource<object?>(
+            _currentOperation = new TaskCompletionSource<Xb31Result>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
-        public void CompleteCurrent(bool commandSucceeded = true)
+        public void CompleteCurrent(Xb31Result? result = null)
         {
-            ReleaseCurrentWithoutSignalingCompletion(commandSucceeded);
+            ReleaseCurrentWithoutSignalingCompletion(result);
             SignalCompletion();
         }
 
-        public void ReleaseCurrentWithoutSignalingCompletion(bool commandSucceeded = true)
+        public void ReleaseCurrentWithoutSignalingCompletion(Xb31Result? result = null)
         {
             Assert.IsTrue(Busy);
             Busy = false;
-            _currentOperation!.SetResult(commandSucceeded ? new object() : null);
+            _currentOperation!.SetResult(result ?? Xb31Result.Success);
             _currentOperation = null;
         }
 

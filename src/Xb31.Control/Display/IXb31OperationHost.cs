@@ -6,5 +6,5 @@ public interface IXb31OperationHost
 {
     event EventHandler? OperationCompleted;
 
-    bool TryStartLighting(LightingMode mode, out Task operation);
+    bool TryStartLighting(LightingMode mode, out Task<Xb31Result> operation);
 }
