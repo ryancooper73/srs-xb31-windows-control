@@ -27,7 +27,7 @@ public partial class App : System.Windows.Application
         {
             var trace = AppTrace.CreateForCurrentUser();
             string executablePath = Environment.ProcessPath ?? "unavailable";
-            string version = System.Diagnostics.FileVersionInfo.GetVersionInfo(executablePath).ProductVersion ?? "unknown";
+            string version = GetVersionForTrace(executablePath);
             trace.Write("Startup", $"path={executablePath}; version={version}; hidden={startHidden}");
             var client = StartupClientFactory.Create(e.Args);
             var window = new MainWindow(client);
@@ -76,5 +76,17 @@ public partial class App : System.Windows.Application
         _singleInstance?.Dispose();
         _controller?.Dispose();
         base.OnExit(e);
+    }
+
+    internal static string GetVersionForTrace(string executablePath)
+    {
+        try
+        {
+            return System.Diagnostics.FileVersionInfo.GetVersionInfo(executablePath).ProductVersion ?? "unknown";
+        }
+        catch
+        {
+            return "unknown";
+        }
     }
 }

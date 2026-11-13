@@ -67,6 +67,43 @@ try {
         throw 'FAIL: verified obsolete shutdown shortcut was not retired'
     }
 
+    $fakeDotnetPath = Join-Path $fixtureDirectory 'fake-dotnet.ps1'
+    $fakeDotnetLogPath = Join-Path $fixtureDirectory 'fake-dotnet-arguments.txt'
+    @'
+param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
+$outputIndex = [Array]::IndexOf($Arguments, '-o')
+if ($outputIndex -lt 0) { throw 'missing output directory' }
+$outputPath = $Arguments[$outputIndex + 1]
+New-Item -ItemType Directory -Path $outputPath -Force | Out-Null
+Set-Content -LiteralPath (Join-Path $outputPath 'Xb31.Control.exe') -Value 'fixture executable' -Encoding ASCII
+Set-Content -LiteralPath $env:XB31_FAKE_DOTNET_LOG -Value ($Arguments -join '|') -Encoding ASCII
+'@ | Set-Content -LiteralPath $fakeDotnetPath -Encoding ASCII
+
+    $env:XB31_FAKE_DOTNET_LOG = $fakeDotnetLogPath
+    try {
+        $defaultOutput = @(
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installerPath `
+                -InstallRoot (Join-Path $fixtureDirectory 'DefaultReleases') `
+                -DesktopPath $desktopPath `
+                -RepositoryRoot $repositoryRoot `
+                -RunRegistryPath $runRegistryPath `
+                -RunValueName $runValueName `
+                -DotnetCommand $fakeDotnetPath 2>&1 |
+                ForEach-Object { $_.ToString() }
+        )
+        $defaultExitCode = $LASTEXITCODE
+    }
+    finally {
+        Remove-Item Env:\XB31_FAKE_DOTNET_LOG -ErrorAction SilentlyContinue
+    }
+
+    if ($defaultExitCode -ne 0) {
+        throw "FAIL: default publish path exited with $defaultExitCode. Output: $($defaultOutput -join ' | ')"
+    }
+    if ((Get-Content -LiteralPath $fakeDotnetLogPath -Raw) -match '--no-restore') {
+        throw 'FAIL: default publish skipped restore on a clean installation path'
+    }
+
     Write-Output 'PASS: control installer publishes a versioned release and registers only that executable'
 }
 finally {

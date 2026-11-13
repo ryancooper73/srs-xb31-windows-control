@@ -4,6 +4,12 @@ namespace Xb31.Control.Tests;
 public sealed class AppTraceTests
 {
     [TestMethod]
+    public void GetVersionForTrace_InvalidExecutablePathFallsBackToUnknown()
+    {
+        Assert.AreEqual("unknown", App.GetVersionForTrace("Z:\\missing\\Xb31.Control.exe"));
+    }
+
+    [TestMethod]
     public void Write_AppendsTimestampedNamedEventsInOrder()
     {
         string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));

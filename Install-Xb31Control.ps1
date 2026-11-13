@@ -9,7 +9,8 @@ param(
         [Environment+SpecialFolder]::DesktopDirectory),
     [string]$RepositoryRoot = $PSScriptRoot,
     [string]$RunRegistryPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run',
-    [string]$RunValueName = 'XB31 Control'
+    [string]$RunValueName = 'XB31 Control',
+    [string]$DotnetCommand = 'dotnet'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -34,9 +35,11 @@ try {
             throw "Control project is missing: $projectPath"
         }
 
-        & dotnet publish $projectPath -c Release --no-restore -o $stagingPath
-        if ($LASTEXITCODE -ne 0) {
-            throw "Control app publish failed with exit code $LASTEXITCODE."
+        $dotnetArguments = @('publish', $projectPath, '-c', 'Release', '-o', $stagingPath)
+        & $DotnetCommand @dotnetArguments
+        $publishExitCode = $LASTEXITCODE
+        if ($null -ne $publishExitCode -and $publishExitCode -ne 0) {
+            throw "Control app publish failed with exit code $publishExitCode."
         }
 
         $SourcePublishPath = $stagingPath
